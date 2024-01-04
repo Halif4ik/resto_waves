@@ -22,5 +22,7 @@ import {AppModule} from './app.module';
     // Enable CORS with the defined options
     app.enableCors(corsOptions);
 
-    await app.listen(+process.env.PORT || 3010);
+    await app.listen(+process.env.PORT || 3010 );
+
+
 }();
