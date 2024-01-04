@@ -3,7 +3,7 @@ import {ScheduledTaskService} from './scheduled-task.service';
 import {ScheduledTaskController} from './scheduled-task.controller';
 import {ScheduleModule} from '@nestjs/schedule';
 import {TypeOrmModule} from "@nestjs/typeorm";
-import {Item} from "./entities/item.entity";
+import {Sneakers} from "./entities/sneakers.entity";
 import {HttpModule} from "@nestjs/axios";
 import {ConfigModule, ConfigService} from '@nestjs/config';
 
@@ -11,7 +11,7 @@ import {ConfigModule, ConfigService} from '@nestjs/config';
     controllers: [ScheduledTaskController],
     providers: [ScheduledTaskService],
     imports: [ScheduleModule.forRoot(),
-        TypeOrmModule.forFeature([Item]),
+        TypeOrmModule.forFeature([Sneakers]),
         HttpModule.registerAsync({
             imports: [ConfigModule],
             useFactory: async (configService: ConfigService) => ({
