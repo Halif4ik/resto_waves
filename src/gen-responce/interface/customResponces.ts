@@ -1,5 +1,5 @@
 import {Sneakers} from "../../scheduled-task/entities/sneakers.entity";
 
 export interface IRespLoadData {
-    "loadData": Sneakers[] | string;
+    "loadData": Sneakers[] | string | any;
 }
