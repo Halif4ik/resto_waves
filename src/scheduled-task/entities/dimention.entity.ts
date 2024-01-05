@@ -6,7 +6,7 @@ export class Dimention {
     id: number;
 
     @Column({type: "int"})
-    article: number;
+    size: number;
 
     @DeleteDateColumn()
     deleteAt: Date;

@@ -1,13 +1,11 @@
-import {Entity, Column, PrimaryGeneratedColumn, DeleteDateColumn, ManyToMany, JoinTable} from 'typeorm';
+import {Entity, Column, PrimaryGeneratedColumn, DeleteDateColumn, ManyToMany, JoinTable,OneToMany} from 'typeorm';
 import {Dimention} from "./dimention.entity";
+import {Model} from "./model.entity";
 
 @Entity()
 export class Sneakers {
     @PrimaryGeneratedColumn()
     id: number;
-
-    @Column({type: "varchar", width: 255})
-    model: string;
 
     @Column({type: "int"})
     article: number;
@@ -20,6 +18,9 @@ export class Sneakers {
 
     @DeleteDateColumn()
     deleteAt: Date;
+
+    @OneToMany(() => Model, model => model.sneakers)
+    model:Model;
 
     @ManyToMany(() => Dimention)
     @JoinTable()

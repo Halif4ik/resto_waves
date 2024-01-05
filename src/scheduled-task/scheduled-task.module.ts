@@ -6,12 +6,14 @@ import {TypeOrmModule} from "@nestjs/typeorm";
 import {Sneakers} from "./entities/sneakers.entity";
 import {HttpModule} from "@nestjs/axios";
 import {ConfigModule, ConfigService} from '@nestjs/config';
+import {Dimention} from "./entities/dimention.entity";
+import {Model} from "./entities/model.entity";
 
 @Module({
     controllers: [ScheduledTaskController],
     providers: [ScheduledTaskService],
     imports: [ScheduleModule.forRoot(),
-        TypeOrmModule.forFeature([Sneakers]),
+        TypeOrmModule.forFeature([Sneakers,Dimention,Model]),
         HttpModule.registerAsync({
             imports: [ConfigModule],
             useFactory: async (configService: ConfigService) => ({
