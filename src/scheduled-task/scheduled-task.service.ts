@@ -4,12 +4,13 @@ import {InjectRepository} from "@nestjs/typeorm";
 import {Repository} from "typeorm";
 import {Sneakers} from "./entities/sneakers.entity";
 import {HttpService} from "@nestjs/axios";
-import {AxiosError} from "axios";
+import {AxiosError, AxiosResponse} from "axios";
 import {catchError, firstValueFrom} from "rxjs";
 import {ConfigService} from "@nestjs/config";
 import {GeneralResponse} from "../gen-responce/interface/generalResponse.interface";
 import {Dimention} from "./entities/dimention.entity";
 import {Model} from "./entities/model.entity";
+import {IRespLoadData} from "../gen-responce/interface/customResponces";
 
 @Injectable()
 export class ScheduledTaskService implements OnApplicationBootstrap {
@@ -27,22 +28,22 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
     }
 
     @Cron(CronExpression.EVERY_HOUR)
-    async loadData(): Promise<GeneralResponse<any>> {
-        /* const firstPageUrl: string = "https://sheets.googleapis.com/v4/spreadsheets/" + this.configService.get<string>('GOOGLE_DOC_KEY')
+    async loadData(): Promise<GeneralResponse<IRespLoadData>> {
+         const firstPageUrl: string = "https://sheets.googleapis.com/v4/spreadsheets/" + this.configService.get<string>('GOOGLE_DOC_KEY')
              + "/values/" + encodeURI(this.configService.get<string>('SHEET_PAGE_1'))  + this.configService.get<string>('GOOGLE_SHEET_RANGE')
              + "?key="
-             + this.configService.get<string>('GOOGLE_API_KEY');*/
+             + this.configService.get<string>('GOOGLE_API_KEY');
         const secondPageUrl: string = "https://sheets.googleapis.com/v4/spreadsheets/" +
             this.configService.get<string>('GOOGLE_DOC_KEY') +
             "/values/" + encodeURI(this.configService.get<string>('SHEET_PAGE_2')) +
             this.configService.get<string>('GOOGLE_SHEET_RANGE') + "?key="
             + this.configService.get<string>('GOOGLE_API_KEY');
 
-        let newUser: any | string
+        let snakersForResponce: Sneakers[] | string
         let status_code: number;
-        let data: any;
+        let axiosData: any;
         try {
-            const axiosResponse = await firstValueFrom(
+            const axiosResponse: AxiosResponse<any, any> = await firstValueFrom(
                 this.httpService.get<any>(secondPageUrl).pipe(
                     catchError((error: AxiosError) => {
                         this.logger.error(error.response.data);
@@ -52,24 +53,24 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
                     }),
                 ),
             );
-            data = axiosResponse.data;
+            axiosData = axiosResponse.data;
         } catch (error) {
             console.error('Error loading data:', error[0]);
-            newUser = error[0];
+            snakersForResponce = error[0];
             status_code = +error[1];
         }
 
-        if (!data || data["values"] === undefined || data["values"].length === 0)
+        if (!axiosData || axiosData["values"] === undefined || axiosData["values"].length === 0)
             throw new HttpException('Not found in this link any sneakers', HttpStatus.NOT_FOUND);
-        /*console.log('values-', data["values"]);*/
 
-        const createdModel: Model = await this.createModel(this.configService.get<string>('SHEET_PAGE_2'));
-        const savedSnakers: Sneakers[] = await this.createSnakers(data["values"],createdModel);
-        console.log('parsedData!-', savedSnakers);
+        const createdModel: Model = await this.checkAndCreateModel(this.configService.get<string>('SHEET_PAGE_2'));
+        snakersForResponce = await this.createSnakers(axiosData["values"], createdModel);
         status_code = HttpStatus.OK;
         return {
             "status_code": status_code,
-            "detail": newUser,
+            "detail": {
+                "loadData": snakersForResponce,
+            },
             "result": "working"
         };
     }
@@ -106,25 +107,32 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
         await this.modelsRepository.save(currentModel);
         this.logger.log(`Was saved ${arrPromisesDimensions.length} new dimensions and added in model ${currentModel.model}`);
 
-
         //create table sneakers
         for (let numModel = 1; numModel < modelNames.length; numModel++) {
-            const newModel: Sneakers = this.sneakersRepository.create({
+            /*first of all try find model exist*/
+            let newModelOrExist: Sneakers | null = await this.sneakersRepository.findOne({
+                where: {name: modelNames[numModel].replace(/\n/g, '')}
+            });
+            /*if not exist create new*/
+            if (!newModelOrExist) newModelOrExist = this.sneakersRepository.create({
                 name: modelNames[numModel].replace(/\n/g, ''),
                 price: +modelPrices[numModel],
                 article: +modelArticles[numModel],
                 model: currentModel,
                 availableDimensions: [],
             });
+
             /*add present dimensions for this model*/
+            const tempAvailableDimensions: Dimention[] = [];
             for (let j = whereStartDimentions + 1; j < values.length; j++)
                 if (values[j][numModel] === '+') {
                     const dimensionFromInDb: Dimention | null = await this.dimensionRepository.findOne({
                         where: {size: +values[j][0]}
                     });
-                    newModel.availableDimensions.push(dimensionFromInDb);
+                    tempAvailableDimensions.push(dimensionFromInDb);
                 }
-            sneakersList.push(this.sneakersRepository.save(newModel));
+            newModelOrExist.availableDimensions = tempAvailableDimensions;
+            sneakersList.push(this.sneakersRepository.save(newModelOrExist));
         }
 
         const responseSnakes: Sneakers[] = await Promise.all(sneakersList);
@@ -133,12 +141,19 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
     }
 
 
-    private createModel(modelName: string): Promise<Model> {
+    private async checkAndCreateModel(modelName: string): Promise<Model> {
         const newModel: Model = this.modelsRepository.create({
             model: modelName,
         });
-        this.logger.log(`New model ${modelName} created`);
-        return this.modelsRepository.save(newModel);
+        const isModelExistInDb: Model | null = await this.modelsRepository.findOne({
+            where: {model: newModel.model}
+        });
+        if (!isModelExistInDb) {
+            this.logger.log(`New model ${modelName} created`);
+            return this.modelsRepository.save(newModel);
+        }
+        this.logger.log(`Model ${modelName} already exist`);
+        return isModelExistInDb;
     }
 }
 
