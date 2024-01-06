@@ -43,7 +43,7 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             this.configService.get<string>('GOOGLE_API_KEY')
         ];
 
-        let snakersForResponse
+        let snakersForResponse: Sneakers[][] | string;
         let status_code: number;
         let axiosData: any;
         try {
@@ -90,71 +90,108 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
     }
 
     private async createSnakers(values: string[][], currentModel: Model): Promise<Sneakers[]> {
-        const modelNames: string[] = values.find((oneArr: string[]): boolean => oneArr[0].trim().toLowerCase() === 'імя');
-        const modelPrices: string[] = values.find((oneArr: string[]) => oneArr[0].trim().toLowerCase() === 'ціна');
-        const modelArticles: string[] = values.find(oneArr => oneArr[0].trim().toLowerCase() === 'код товару');
-        const whereStartDimentions: number = values.findIndex(oneArr => oneArr[0].trim().toLowerCase() === 'розміри');
+        const modelNamesGoogle: string[] = values.find((oneArr: string[]): boolean => oneArr[0].trim().toLowerCase() === 'імя');
+        const modelPricesGoogle: string[] = values.find((oneArr: string[]) => oneArr[0].trim().toLowerCase() === 'ціна');
+        const modelArticlesGoogle: string[] = values.find(oneArr => oneArr[0].trim().toLowerCase() === 'код товару');
+        const whereStartDimentionsGoogle: number = values.findIndex(oneArr => oneArr[0].trim().toLowerCase() === 'розміри');
         /*  const countNewDimensions: number = values.length - 1 - whereStartDimentions;*/
-        if (modelNames.length <= 1) throw new HttpException('Not found in this link any sneakers', HttpStatus.NOT_FOUND);
+        if (modelNamesGoogle.length <= 1) throw new HttpException('Not found in this link any sneakers', HttpStatus.NOT_FOUND);
         const sneakersList: Promise<Sneakers>[] = [];
 
         /*create schema dimensions*/
         const arrPromisesDimensions: Promise<Dimention>[] = [];
-        for (let j = whereStartDimentions + 1; j < values.length; j++) {
+        for (let j = whereStartDimentionsGoogle + 1; j < values.length; j++) {
             const newDimention: Dimention = this.dimensionRepository.create({
                 size: +values[j][0],
             });
             const dimensionExistInDb: Dimention | null = await this.dimensionRepository.findOne({
                 where: {size: newDimention.size}
-
             });
             if (!dimensionExistInDb) {
                 arrPromisesDimensions.push(this.dimensionRepository.save(newDimention));
-                this.logger.log(`New dimension ${newDimention.size} created`);
+                this.logger.log(`New additional dimension ${newDimention.size} created from ${currentModel.model}`);
             }
         }
 
-        const savedDimensions: Dimention[] = await Promise.all(arrPromisesDimensions);
-        /*adding relation - in Model arr all dimensions*/
-        currentModel.allModelDimensions = savedDimensions;
-        await this.modelsRepository.save(currentModel);
-        this.logger.log(`Was saved ${arrPromisesDimensions.length} new dimensions and added in model ${currentModel.model}`);
+        if (arrPromisesDimensions.length) {
+            /*save new dimensions in db*/
+            const savedDimensions: Dimention[] = await Promise.all(arrPromisesDimensions);
+            /*adding relation - in Model arr all dimensions*/
+            currentModel.allModelDimensions = savedDimensions;
+            await this.modelsRepository.save(currentModel);
+            this.logger.log(`**Was saved ${arrPromisesDimensions.length} new additional dimensions`);
+        }
 
         //create table sneakers
-        for (let numModel = 1; numModel < modelNames.length; numModel++) {
-            /*first of all try find model exist*/
-            let newModelExis: Sneakers | null = await this.sneakersRepository.findOne({
-                where: {name: modelNames[numModel].replace(/\n/g, '')}
+        for (let numModel = 1; numModel < modelNamesGoogle.length; numModel++) {
+            /*first of all try find sneaker exist in db*/
+            let newSneakerOrExist: Sneakers | null = await this.sneakersRepository.findOne({
+                where: {name: modelNamesGoogle[numModel].replace(/\n/g, '')},
+                relations: ['availableDimensions']
             });
+            const isNewSneaker: boolean = !newSneakerOrExist;
+            let isChangePrice: boolean = false;
             /*if not exist create new*/
-            if (!newModelExis) newModelExis = this.sneakersRepository.create({
-                name: modelNames[numModel].replace(/\n/g, ''),
-                price: +modelPrices[numModel],
-                article: +modelArticles[numModel],
-                model: currentModel,
-                availableDimensions: [],
-            });
+            if (!newSneakerOrExist)
+                newSneakerOrExist = this.sneakersRepository.create({
+                    name: modelNamesGoogle[numModel].replace(/\n/g, ''),
+                    price: +modelPricesGoogle[numModel],
+                    article: +modelArticlesGoogle[numModel],
+                    model: currentModel,
+                    availableDimensions: [],
+                });
             else { /*if exist update price and article*/
-                newModelExis.price = +modelPrices[numModel];
-                newModelExis.article = +modelArticles[numModel];
+                if (newSneakerOrExist.price !== +modelPricesGoogle[numModel]) {
+                    isChangePrice = true;
+                    newSneakerOrExist.price = +modelPricesGoogle[numModel];
+                }
+                if (newSneakerOrExist.article !== +modelArticlesGoogle[numModel]) {
+                    isChangePrice = true;
+                    newSneakerOrExist.article = +modelArticlesGoogle[numModel];
+                }
             }
 
             /*add present dimensions for this model*/
-            const tempAvailableDimensions: Dimention[] = [];
-            for (let j = whereStartDimentions + 1; j < values.length; j++)
+            const googleAvailableDimensions: Dimention[] = [];
+            for (let j = whereStartDimentionsGoogle + 1; j < values.length; j++)
                 if (values[j][numModel] === '+') {
                     const dimensionFromInDb: Dimention | null = await this.dimensionRepository.findOne({
                         where: {size: +values[j][0]}
                     });
-                    tempAvailableDimensions.push(dimensionFromInDb);
+                    googleAvailableDimensions.push(dimensionFromInDb);
                 }
-            newModelExis.availableDimensions = tempAvailableDimensions;
-            sneakersList.push(this.sneakersRepository.save(newModelExis));
+            /*add additional check if dimension present in snaker */
+            if (!isNewSneaker) {
+                const oldDimensions: Dimention[] = newSneakerOrExist.availableDimensions;
+                const newDimensions: Dimention[] = googleAvailableDimensions;
+                if (oldDimensions.length !== newDimensions.length) {
+                    isChangePrice = true;
+                } else {
+                    for (let i = 0; i < oldDimensions.length; i++) {
+                        if (oldDimensions[i].size !== newDimensions[i].size) {
+                            isChangePrice = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            //if was same change parameters in old sneakers Or created New Sneaker -  add to list for save
+            if (isChangePrice || isNewSneaker) {
+                console.log('PUSH-',newSneakerOrExist);
+                newSneakerOrExist.availableDimensions = googleAvailableDimensions;
+                sneakersList.push(this.sneakersRepository.save(newSneakerOrExist));
+            }
         }
 
-        const responseSnakes: Sneakers[] = await Promise.all(sneakersList);
-        this.logger.log(`Was saved ${responseSnakes.length} new sneakers`);
-        return responseSnakes;
+        /*if was not any changes in sneakers we skip wait save*/
+        console.log('sneakersList.length-', sneakersList.length);
+        if (sneakersList.length) {
+            console.log('if');
+            const responseSnakes: Sneakers[] = await Promise.all(sneakersList);
+            this.logger.log(`Was saved ${responseSnakes.length} new sneakers for model ${currentModel.model}`);
+            return responseSnakes;
+        }
+        return [];
     }
 
 
