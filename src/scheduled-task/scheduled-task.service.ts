@@ -164,20 +164,20 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             if (!isNewSneaker) {
                 const oldDimensions: Dimention[] = newSneakerOrExist.availableDimensions;
                 const newDimensions: Dimention[] = googleAvailableDimensions;
-                if (oldDimensions.length !== newDimensions.length) {
-                    isChangePrice = true;
-                } else {
-                    for (let i = 0; i < oldDimensions.length; i++) {
-                        if (oldDimensions[i].size !== newDimensions[i].size) {
-                            isChangePrice = true;
-                            break;
-                        }
-                    }
+                if (oldDimensions.length !== newDimensions.length) isChangePrice = true;
+                else {
+                    const isDimensionExist: boolean = newDimensions.some((newDimension: Dimention) => {
+                        return oldDimensions.some((oldDimension: Dimention): boolean => {
+                            if (oldDimension.id === newDimension.id) return true;
+                        });
+                    });
+                    if (!isDimensionExist) isChangePrice = true;
                 }
             }
+
             //if was same change parameters in old sneakers Or created New Sneaker -  add to list for save
             if (isChangePrice || isNewSneaker) {
-                console.log('PUSH-',newSneakerOrExist);
+                console.log('PUSH-', newSneakerOrExist);
                 newSneakerOrExist.availableDimensions = googleAvailableDimensions;
                 sneakersList.push(this.sneakersRepository.save(newSneakerOrExist));
             }
