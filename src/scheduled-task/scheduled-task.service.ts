@@ -4,7 +4,7 @@ import {InjectRepository} from "@nestjs/typeorm";
 import {Repository} from "typeorm";
 import {Sneakers} from "./entities/sneakers.entity";
 import {HttpService} from "@nestjs/axios";
-import {AxiosError, AxiosResponse} from "axios";
+import { AxiosResponse} from "axios";
 import {catchError, firstValueFrom} from "rxjs";
 import {ConfigService} from "@nestjs/config";
 import {GeneralResponse} from "../gen-responce/interface/generalResponse.interface";
@@ -43,8 +43,6 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             this.configService.get<string>('GOOGLE_API_KEY')
         ];
 
-        let snakersForResponse: Sneakers[][] | string;
-        let status_code: number;
         let axiosData: any;
         try {
             const axiosResponses: AxiosResponse<any, any>[] = await Promise.all(
@@ -54,8 +52,7 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             axiosData = axiosResponses.map((response: AxiosResponse<any, any>) => response.data);
         } catch (error) {
             console.error('Error loading data:', error[0]);
-            snakersForResponse = error[0];
-            status_code = +error[1];
+            throw new HttpException(`Responce from Googlesheets- ${error[0]} and status_code- ${+error[1]}`, HttpStatus.BAD_REQUEST);
         }
 
         if (!axiosData || axiosData.some(data => !data["values"] || data["values"].length === 0))
@@ -65,13 +62,12 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             urls.map(url => this.checkAndCreateModel(this.extractModelNameFromUrl(url)))
         );
 
-        snakersForResponse = await Promise.all(
+        const snakersForResponse: Sneakers[][] = await Promise.all(
             axiosData.map((data, index) => this.createSnakers(data["values"], createdModels[index]))
         );
 
-        status_code = HttpStatus.OK;
         return {
-            "status_code": status_code,
+            "status_code": HttpStatus.OK,
             "detail": {
                 "loadData": snakersForResponse,
             },
@@ -177,16 +173,13 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
 
             //if was same change parameters in old sneakers Or created New Sneaker -  add to list for save
             if (isChangePrice || isNewSneaker) {
-                console.log('PUSH-', newSneakerOrExist);
                 newSneakerOrExist.availableDimensions = googleAvailableDimensions;
                 sneakersList.push(this.sneakersRepository.save(newSneakerOrExist));
             }
         }
 
         /*if was not any changes in sneakers we skip wait save*/
-        console.log('sneakersList.length-', sneakersList.length);
         if (sneakersList.length) {
-            console.log('if');
             const responseSnakes: Sneakers[] = await Promise.all(sneakersList);
             this.logger.log(`Was saved ${responseSnakes.length} new sneakers for model ${currentModel.model}`);
             return responseSnakes;
