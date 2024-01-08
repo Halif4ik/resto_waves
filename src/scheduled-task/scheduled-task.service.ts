@@ -4,8 +4,7 @@ import {InjectRepository} from "@nestjs/typeorm";
 import {Repository} from "typeorm";
 import {Sneakers} from "./entities/sneakers.entity";
 import {HttpService} from "@nestjs/axios";
-import { AxiosResponse} from "axios";
-import {catchError, firstValueFrom} from "rxjs";
+import {AxiosResponse} from "axios";
 import {ConfigService} from "@nestjs/config";
 import {GeneralResponse} from "../gen-responce/interface/generalResponse.interface";
 import {Dimention} from "./entities/dimention.entity";
@@ -85,6 +84,7 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
         return modelNameParts[0];
     }
 
+    /*todo check relation model sneakers*/
     private async createSnakers(values: string[][], currentModel: Model): Promise<Sneakers[]> {
         const modelNamesGoogle: string[] = values.find((oneArr: string[]): boolean => oneArr[0].trim().toLowerCase() === 'імя');
         const modelPricesGoogle: string[] = values.find((oneArr: string[]) => oneArr[0].trim().toLowerCase() === 'ціна');
@@ -114,7 +114,8 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             const savedDimensions: Dimention[] = await Promise.all(arrPromisesDimensions);
             /*adding relation - in Model arr all dimensions*/
             currentModel.allModelDimensions = savedDimensions;
-            await this.modelsRepository.save(currentModel);
+            const tempM = await this.modelsRepository.save(currentModel);
+            console.log('tempM-', tempM);
             this.logger.log(`**Was saved ${arrPromisesDimensions.length} new additional dimensions`);
         }
 
@@ -199,7 +200,6 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             this.logger.log(`New model ${modelName} created`);
             return this.modelsRepository.save(newModel);
         }
-        this.logger.log(`Model ${modelName} already exist`);
         return isModelExistInDb;
     }
 }

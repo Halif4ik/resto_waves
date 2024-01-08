@@ -6,6 +6,7 @@ import {GetSneakerDto} from "./dto/get-sneaker.dto";
 import {PaginationsSneakersDto} from "./dto/paginations-sneaker.dto";
 import {UpdateSneakerDto} from "./dto/update-sneaker.dto";
 import {GetDimensionDto} from "./dto/dimension.dto";
+import {GetModelDto} from "./dto/get-model.dto";
 
 @Controller('sneakers')
 export class SneakersController {
@@ -47,6 +48,14 @@ export class SneakersController {
     @UsePipes(new ValidationPipe({transform: true, whitelist: true}))
     findSneakers(@Query() getDimensionDto: GetDimensionDto): Promise<GeneralResponse<IAllSneakers>> {
         return this.sneakersService.findSneakers(getDimensionDto);
+    }
+
+    //5 All Users can find sneakers by model Adidas Yeezy 700
+    //Endpoint: Get /sneakers/models?model=Adidas%20Yeezy%20700
+    @Get('/models')
+    @UsePipes(new ValidationPipe({transform: true, whitelist: true}))
+    findSneakersByModel(@Query() getModelDto: GetModelDto): Promise<GeneralResponse<any>> {
+        return this.sneakersService.findSneakersByModel(getModelDto);
     }
 
 }

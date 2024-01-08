@@ -11,6 +11,7 @@ import process from "process";
 import {PaginationsSneakersDto} from "./dto/paginations-sneaker.dto";
 import {UpdateSneakerDto} from "./dto/update-sneaker.dto";
 import {GetDimensionDto} from "./dto/dimension.dto";
+import {GetModelDto} from "./dto/get-model.dto";
 
 @Injectable()
 export class SneakersService {
@@ -84,6 +85,21 @@ export class SneakersService {
             "status_code": HttpStatus.OK,
             "detail": {
                 "sneakers": sneakersInDimension ? sneakersInDimension : [],
+            },
+            "result": "updated"
+        };
+    }
+
+    async findSneakersByModel(getModelDto: GetModelDto): Promise<GeneralResponse<any>> {
+        const sneakersByModel  = await this.modelsRepository.find({
+            relations: ["allModelDimensions", "sneakers"],
+            where: {model: getModelDto.model}
+        });
+        console.log('sneakersByModel-',sneakersByModel);
+        return {
+            "status_code": HttpStatus.OK,
+            "detail": {
+                "sneakers": sneakersByModel ? sneakersByModel : [],
             },
             "result": "updated"
         };

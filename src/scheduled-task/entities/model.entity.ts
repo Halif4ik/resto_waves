@@ -1,4 +1,13 @@
-import {Entity, Column, PrimaryGeneratedColumn, DeleteDateColumn, ManyToOne, ManyToMany, JoinTable} from 'typeorm';
+import {
+    Entity,
+    Column,
+    PrimaryGeneratedColumn,
+    DeleteDateColumn,
+    ManyToOne,
+    ManyToMany,
+    JoinTable,
+    JoinColumn
+} from 'typeorm';
 import {Sneakers} from "./sneakers.entity";
 import {Dimention} from "./dimention.entity";
 
@@ -14,7 +23,8 @@ export class Model {
     deleteAt: Date;
 
     @ManyToOne(() => Sneakers, sneakers => sneakers.model,
-        {cascade: true, onDelete: 'CASCADE'})
+        {onDelete: 'CASCADE', eager: true})
+    @JoinColumn({name:'sneakersName'})
     sneakers: Sneakers;
 
     @ManyToMany(() => Dimention)
