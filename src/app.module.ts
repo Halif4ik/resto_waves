@@ -4,6 +4,7 @@ import {TypeOrmModule} from "@nestjs/typeorm";
 import {GenResponceModule} from './gen-responce/gen-responce.module';
 import {GenResponceService} from "./gen-responce/gen-responce.service";
 import { ScheduledTaskModule } from './scheduled-task/scheduled-task.module';
+import { SneakersModule } from './sneakers/sneakers.module';
 
 @Module({
     /*controllers: [GenResponceModule],*/
@@ -24,6 +25,7 @@ import { ScheduledTaskModule } from './scheduled-task/scheduled-task.module';
         }),
         GenResponceModule,
         ScheduledTaskModule,
+        SneakersModule,
     ],
 })
 export class AppModule {

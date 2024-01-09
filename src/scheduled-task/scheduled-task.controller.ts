@@ -1,6 +1,7 @@
 import {Controller, Get,} from '@nestjs/common';
 import {ScheduledTaskService} from './scheduled-task.service';
 import {GeneralResponse} from "../gen-responce/interface/generalResponse.interface";
+import {IRespLoadData} from "../gen-responce/interface/customResponces";
 
 @Controller('scheduled-task')
 export class ScheduledTaskController {
@@ -11,7 +12,7 @@ export class ScheduledTaskController {
     //Endpoint: GET /scheduled-task/refresh
     //Permissions: All users
     @Get('refresh')
-    loadData(): Promise<GeneralResponse<any>> {
+    loadData(): Promise<GeneralResponse<IRespLoadData>> {
         return this.scheduledTaskService.loadData();
     }
 

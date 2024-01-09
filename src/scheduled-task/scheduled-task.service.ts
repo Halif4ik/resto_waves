@@ -4,12 +4,15 @@ import {InjectRepository} from "@nestjs/typeorm";
 import {Repository} from "typeorm";
 import {Sneakers} from "./entities/sneakers.entity";
 import {HttpService} from "@nestjs/axios";
-import {AxiosError} from "axios";
+import { AxiosResponse} from "axios";
 import {catchError, firstValueFrom} from "rxjs";
 import {ConfigService} from "@nestjs/config";
 import {GeneralResponse} from "../gen-responce/interface/generalResponse.interface";
 import {Dimention} from "./entities/dimention.entity";
 import {Model} from "./entities/model.entity";
+
+import {IRespLoadData} from "../gen-responce/interface/customResponces";
+
 
 @Injectable()
 export class ScheduledTaskService implements OnApplicationBootstrap {
@@ -22,123 +25,192 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
                 private readonly configService: ConfigService,) {
     }
 
-    async onApplicationBootstrap() {
+    async onApplicationBootstrap(): Promise<void> {
         await this.loadData();
     }
 
     @Cron(CronExpression.EVERY_HOUR)
-    async loadData(): Promise<GeneralResponse<any>> {
-        /* const firstPageUrl: string = "https://sheets.googleapis.com/v4/spreadsheets/" + this.configService.get<string>('GOOGLE_DOC_KEY')
-             + "/values/" + encodeURI(this.configService.get<string>('SHEET_PAGE_1'))  + this.configService.get<string>('GOOGLE_SHEET_RANGE')
-             + "?key="
-             + this.configService.get<string>('GOOGLE_API_KEY');*/
-        const secondPageUrl: string = "https://sheets.googleapis.com/v4/spreadsheets/" +
+    async loadData(): Promise<GeneralResponse<IRespLoadData>> {
+        const urls: string[] = [
+            "https://sheets.googleapis.com/v4/spreadsheets/" +
+            this.configService.get<string>('GOOGLE_DOC_KEY') +
+            "/values/" + encodeURI(this.configService.get<string>('SHEET_PAGE_1')) +
+            this.configService.get<string>('GOOGLE_SHEET_RANGE') + "?key=" +
+            this.configService.get<string>('GOOGLE_API_KEY'),
+
+            "https://sheets.googleapis.com/v4/spreadsheets/" +
             this.configService.get<string>('GOOGLE_DOC_KEY') +
             "/values/" + encodeURI(this.configService.get<string>('SHEET_PAGE_2')) +
-            this.configService.get<string>('GOOGLE_SHEET_RANGE') + "?key="
-            + this.configService.get<string>('GOOGLE_API_KEY');
 
-        let newUser: any | string
-        let status_code: number;
-        let data: any;
+            this.configService.get<string>('GOOGLE_SHEET_RANGE') + "?key=" +
+            this.configService.get<string>('GOOGLE_API_KEY')
+        ];
+
+        let axiosData: any;
         try {
-            const axiosResponse = await firstValueFrom(
-                this.httpService.get<any>(secondPageUrl).pipe(
-                    catchError((error: AxiosError) => {
-                        this.logger.error(error.response.data);
-                        if (error.response.data['error'] && error.response.data['error']['message'])
-                            throw [error.response.data['error']['message'], error.response.data['error']['code']];
-                        throw 'Wrong url please check url to collection!';
-                    }),
-                ),
+            const axiosResponses: AxiosResponse<any, any>[] = await Promise.all(
+                urls.map((url: string) => this.httpService.get<any>(url).toPromise())
             );
-            data = axiosResponse.data;
+
+            axiosData = axiosResponses.map((response: AxiosResponse<any, any>) => response.data);
         } catch (error) {
             console.error('Error loading data:', error[0]);
-            newUser = error[0];
-            status_code = +error[1];
+            throw new HttpException(`Responce from Googlesheets- ${error[0]} and status_code- ${+error[1]}`, HttpStatus.BAD_REQUEST);
         }
 
-        if (!data || data["values"] === undefined || data["values"].length === 0)
-            throw new HttpException('Not found in this link any sneakers', HttpStatus.NOT_FOUND);
-        /*console.log('values-', data["values"]);*/
+        if (!axiosData || axiosData.some(data => !data["values"] || data["values"].length === 0))
+            throw new HttpException('Not found in one of the links any sneakers', HttpStatus.NOT_FOUND);
 
-        const createdModel: Model = await this.createModel(this.configService.get<string>('SHEET_PAGE_2'));
-        const savedSnakers: Sneakers[] = await this.createSnakers(data["values"],createdModel);
-        console.log('parsedData!-', savedSnakers);
-        status_code = HttpStatus.OK;
+        const createdModels: Model[] = await Promise.all(
+            urls.map(url => this.checkAndCreateModel(this.extractModelNameFromUrl(url)))
+        );
+
+        const snakersForResponse: Sneakers[][] = await Promise.all(
+            axiosData.map((data, index) => this.createSnakers(data["values"], createdModels[index]))
+        );
+
         return {
-            "status_code": status_code,
-            "detail": newUser,
+            "status_code": HttpStatus.OK,
+            "detail": {
+                "loadData": snakersForResponse,
+            },
+
             "result": "working"
         };
     }
 
+    private extractModelNameFromUrl(url: string): string {
+        // Split the URL based on '/' and get the part containing the model name
+        const parts: string[] = url.split('/');
+        // Decode the URI-encoded model name
+        const decodedModelName: string = decodeURI(parts[7]);
+        // For example, if the model name is followed by !A, you can split it again and return the desired part
+        const modelNameParts: string[] = decodedModelName.split('!A');
+        return modelNameParts[0];
+    }
 
     private async createSnakers(values: string[][], currentModel: Model): Promise<Sneakers[]> {
-        const modelNames: string[] = values.find((oneArr: string[]): boolean => oneArr[0].trim().toLowerCase() === 'імя');
-        const modelPrices: string[] = values.find((oneArr: string[]) => oneArr[0].trim().toLowerCase() === 'ціна');
-        const modelArticles: string[] = values.find(oneArr => oneArr[0].trim().toLowerCase() === 'код товару');
-        const whereStartDimentions: number = values.findIndex(oneArr => oneArr[0].trim().toLowerCase() === 'розміри');
-        const countDimensions: number = values.length - 1 - whereStartDimentions;
-        if (modelNames.length <= 1) throw new HttpException('Not found in this link any sneakers', HttpStatus.NOT_FOUND);
+        const modelNamesGoogle: string[] = values.find((oneArr: string[]): boolean => oneArr[0].trim().toLowerCase() === 'імя');
+        const modelPricesGoogle: string[] = values.find((oneArr: string[]) => oneArr[0].trim().toLowerCase() === 'ціна');
+        const modelArticlesGoogle: string[] = values.find(oneArr => oneArr[0].trim().toLowerCase() === 'код товару');
+        const whereStartDimentionsGoogle: number = values.findIndex(oneArr => oneArr[0].trim().toLowerCase() === 'розміри');
+        /*  const countNewDimensions: number = values.length - 1 - whereStartDimentions;*/
+        if (modelNamesGoogle.length <= 1) throw new HttpException('Not found in this link any sneakers', HttpStatus.NOT_FOUND);
         const sneakersList: Promise<Sneakers>[] = [];
-        console.log('countDimentions-', countDimensions);
 
         /*create schema dimensions*/
         const arrPromisesDimensions: Promise<Dimention>[] = [];
-        for (let j = whereStartDimentions + 1; j < values.length; j++) {
+        for (let j = whereStartDimentionsGoogle + 1; j < values.length; j++) {
             const newDimention: Dimention = this.dimensionRepository.create({
                 size: +values[j][0],
             });
             const dimensionExistInDb: Dimention | null = await this.dimensionRepository.findOne({
                 where: {size: newDimention.size}
-
             });
             if (!dimensionExistInDb) {
                 arrPromisesDimensions.push(this.dimensionRepository.save(newDimention));
-                this.logger.log(`New dimension ${newDimention.size} created`);
+                this.logger.log(`New additional dimension ${newDimention.size} created from ${currentModel.model}`);
             }
         }
-        const savedDimensions: Dimention[] = await Promise.all(arrPromisesDimensions);
-        /*adding relation - in Model arr all dimensions*/
-        currentModel.allModelDimensions = savedDimensions;
-        await this.modelsRepository.save(currentModel);
-        this.logger.log(`Was saved ${arrPromisesDimensions.length} new dimensions and added in model ${currentModel.model}`);
 
+        if (arrPromisesDimensions.length) {
+            /*save new dimensions in db*/
+            const savedDimensions: Dimention[] = await Promise.all(arrPromisesDimensions);
+            /*adding relation - in Model arr all dimensions*/
+            currentModel.allModelDimensions = savedDimensions;
+            await this.modelsRepository.save(currentModel);
+            this.logger.log(`**Was saved ${arrPromisesDimensions.length} new additional dimensions`);
+        }
 
         //create table sneakers
-        for (let numModel = 1; numModel < modelNames.length; numModel++) {
-            const newModel: Sneakers = this.sneakersRepository.create({
-                name: modelNames[numModel].replace(/\n/g, ''),
-                price: +modelPrices[numModel],
-                article: +modelArticles[numModel],
-                model: currentModel,
-                availableDimensions: [],
+        for (let numModel = 1; numModel < modelNamesGoogle.length; numModel++) {
+            /*first of all try find sneaker exist in db*/
+            let newSneakerOrExist: Sneakers | null = await this.sneakersRepository.findOne({
+                where: {name: modelNamesGoogle[numModel].replace(/\n/g, '')},
+                relations: ['availableDimensions']
             });
+            const isNewSneaker: boolean = !newSneakerOrExist;
+            let isChangePrice: boolean = false;
+            /*if not exist create new*/
+            if (!newSneakerOrExist)
+                newSneakerOrExist = this.sneakersRepository.create({
+                    name: modelNamesGoogle[numModel].replace(/\n/g, ''),
+                    price: +modelPricesGoogle[numModel],
+                    article: +modelArticlesGoogle[numModel],
+                    model: currentModel,
+                    availableDimensions: [],
+                });
+            else { /*if exist update price and article*/
+                if (newSneakerOrExist.price !== +modelPricesGoogle[numModel]) {
+                    isChangePrice = true;
+                    newSneakerOrExist.price = +modelPricesGoogle[numModel];
+                }
+                if (newSneakerOrExist.article !== +modelArticlesGoogle[numModel]) {
+                    isChangePrice = true;
+                    newSneakerOrExist.article = +modelArticlesGoogle[numModel];
+                }
+            }
+
+
             /*add present dimensions for this model*/
-            for (let j = whereStartDimentions + 1; j < values.length; j++)
+            const googleAvailableDimensions: Dimention[] = [];
+            for (let j = whereStartDimentionsGoogle + 1; j < values.length; j++)
+
+   
+
                 if (values[j][numModel] === '+') {
                     const dimensionFromInDb: Dimention | null = await this.dimensionRepository.findOne({
                         where: {size: +values[j][0]}
                     });
-                    newModel.availableDimensions.push(dimensionFromInDb);
+
+                    googleAvailableDimensions.push(dimensionFromInDb);
                 }
-            sneakersList.push(this.sneakersRepository.save(newModel));
+            /*add additional check if dimension present in snaker */
+            if (!isNewSneaker) {
+                const oldDimensions: Dimention[] = newSneakerOrExist.availableDimensions;
+                const newDimensions: Dimention[] = googleAvailableDimensions;
+                if (oldDimensions.length !== newDimensions.length) isChangePrice = true;
+                else {
+                    const isDimensionExist: boolean = newDimensions.some((newDimension: Dimention) => {
+                        return oldDimensions.some((oldDimension: Dimention): boolean => {
+                            if (oldDimension.id === newDimension.id) return true;
+                        });
+                    });
+                    if (!isDimensionExist) isChangePrice = true;
+                }
+            }
+
+            //if was same change parameters in old sneakers Or created New Sneaker -  add to list for save
+            if (isChangePrice || isNewSneaker) {
+                newSneakerOrExist.availableDimensions = googleAvailableDimensions;
+                sneakersList.push(this.sneakersRepository.save(newSneakerOrExist));
+            }
         }
 
-        const responseSnakes: Sneakers[] = await Promise.all(sneakersList);
-        this.logger.log(`Was saved ${responseSnakes.length} new sneakers`);
-        return responseSnakes;
+        /*if was not any changes in sneakers we skip wait save*/
+        if (sneakersList.length) {
+            const responseSnakes: Sneakers[] = await Promise.all(sneakersList);
+            this.logger.log(`Was saved ${responseSnakes.length} new sneakers for model ${currentModel.model}`);
+            return responseSnakes;
+        }
+        return [];
     }
 
 
-    private createModel(modelName: string): Promise<Model> {
+    private async checkAndCreateModel(modelName: string): Promise<Model> {
         const newModel: Model = this.modelsRepository.create({
             model: modelName,
         });
-        this.logger.log(`New model ${modelName} created`);
-        return this.modelsRepository.save(newModel);
+        const isModelExistInDb: Model | null = await this.modelsRepository.findOne({
+            where: {model: newModel.model}
+        });
+        if (!isModelExistInDb) {
+            this.logger.log(`New model ${modelName} created`);
+            return this.modelsRepository.save(newModel);
+        }
+        this.logger.log(`Model ${modelName} already exist`);
+        return isModelExistInDb;
+
     }
 }
 
