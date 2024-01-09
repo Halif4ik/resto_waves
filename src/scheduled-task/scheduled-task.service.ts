@@ -10,7 +10,9 @@ import {ConfigService} from "@nestjs/config";
 import {GeneralResponse} from "../gen-responce/interface/generalResponse.interface";
 import {Dimention} from "./entities/dimention.entity";
 import {Model} from "./entities/model.entity";
+
 import {IRespLoadData} from "../gen-responce/interface/customResponces";
+
 
 @Injectable()
 export class ScheduledTaskService implements OnApplicationBootstrap {
@@ -39,6 +41,7 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             "https://sheets.googleapis.com/v4/spreadsheets/" +
             this.configService.get<string>('GOOGLE_DOC_KEY') +
             "/values/" + encodeURI(this.configService.get<string>('SHEET_PAGE_2')) +
+
             this.configService.get<string>('GOOGLE_SHEET_RANGE') + "?key=" +
             this.configService.get<string>('GOOGLE_API_KEY')
         ];
@@ -71,6 +74,7 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             "detail": {
                 "loadData": snakersForResponse,
             },
+
             "result": "working"
         };
     }
@@ -147,13 +151,18 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
                 }
             }
 
+
             /*add present dimensions for this model*/
             const googleAvailableDimensions: Dimention[] = [];
             for (let j = whereStartDimentionsGoogle + 1; j < values.length; j++)
+
+   
+
                 if (values[j][numModel] === '+') {
                     const dimensionFromInDb: Dimention | null = await this.dimensionRepository.findOne({
                         where: {size: +values[j][0]}
                     });
+
                     googleAvailableDimensions.push(dimensionFromInDb);
                 }
             /*add additional check if dimension present in snaker */
@@ -201,6 +210,7 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
         }
         this.logger.log(`Model ${modelName} already exist`);
         return isModelExistInDb;
+
     }
 }
 
