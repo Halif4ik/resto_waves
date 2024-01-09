@@ -23,8 +23,8 @@ export class Model {
     deleteAt: Date;
 
     @ManyToOne(() => Sneakers, sneakers => sneakers.model,
-        {onDelete: 'CASCADE', eager: true})
-    @JoinColumn({name:'sneakersName'})
+        {onDelete: 'CASCADE', eager: true, cascade: true, /*nullable: false, orphanedRowAction: 'delete'*/})
+    @JoinColumn({name: 'sneakersName'})
     sneakers: Sneakers;
 
     @ManyToMany(() => Dimention)

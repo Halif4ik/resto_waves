@@ -61,6 +61,32 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             urls.map(url => this.checkAndCreateModel(this.extractModelNameFromUrl(url)))
         );
 
+        const axiosDimens = axiosData[0]["values"].slice(4);
+        /*create for new dimension schema*/
+        await Promise.all(
+            axiosDimens.map(async (oneArr: string[]): Promise<Dimention[]> => {
+                const arrPromisesDimensions: Promise<Dimention>[] = [];
+
+                const newDimention: Dimention = this.dimensionRepository.create({
+                    size: +oneArr[0],
+                });
+                const dimensionExistInDb: Dimention | null = await this.dimensionRepository.findOne({
+                    where: {size: newDimention.size}
+                });
+                if (!dimensionExistInDb) {
+                    arrPromisesDimensions.push(this.dimensionRepository.save(newDimention));
+                    this.logger.log(`New additional dimension ${newDimention.size} CREATED`);
+                }
+                /*save new dimensions in db*/
+                if (arrPromisesDimensions.length) {
+                    const savedDimensions: Dimention[] = await Promise.all(arrPromisesDimensions);
+                    this.logger.log(`*Saved ${arrPromisesDimensions.length} new additional dimensions`);
+                    return savedDimensions;
+                }
+
+            })
+        );
+
         const snakersForResponse: Sneakers[][] = await Promise.all(
             axiosData.map((data, index) => this.createSnakers(data["values"], createdModels[index]))
         );
@@ -86,37 +112,28 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
 
     /*todo check relation model sneakers*/
     private async createSnakers(values: string[][], currentModel: Model): Promise<Sneakers[]> {
+        const sneakersList: Promise<Sneakers>[] = [];
         const modelNamesGoogle: string[] = values.find((oneArr: string[]): boolean => oneArr[0].trim().toLowerCase() === 'імя');
         const modelPricesGoogle: string[] = values.find((oneArr: string[]) => oneArr[0].trim().toLowerCase() === 'ціна');
         const modelArticlesGoogle: string[] = values.find(oneArr => oneArr[0].trim().toLowerCase() === 'код товару');
         const whereStartDimentionsGoogle: number = values.findIndex(oneArr => oneArr[0].trim().toLowerCase() === 'розміри');
-        /*  const countNewDimensions: number = values.length - 1 - whereStartDimentions;*/
         if (modelNamesGoogle.length <= 1) throw new HttpException('Not found in this link any sneakers', HttpStatus.NOT_FOUND);
-        const sneakersList: Promise<Sneakers>[] = [];
 
-        /*create schema dimensions*/
-        const arrPromisesDimensions: Promise<Dimention>[] = [];
+
+        /*adding relation - in Model arr all dimensions*/
+        const arrDimensionFromDb: Dimention[] = [];
         for (let j = whereStartDimentionsGoogle + 1; j < values.length; j++) {
-            const newDimention: Dimention = this.dimensionRepository.create({
-                size: +values[j][0],
-            });
             const dimensionExistInDb: Dimention | null = await this.dimensionRepository.findOne({
-                where: {size: newDimention.size}
+                where: {size: +values[j][0]}
             });
-            if (!dimensionExistInDb) {
-                arrPromisesDimensions.push(this.dimensionRepository.save(newDimention));
-                this.logger.log(`New additional dimension ${newDimention.size} created from ${currentModel.model}`);
-            }
+            if (!dimensionExistInDb)
+                arrDimensionFromDb.push(dimensionExistInDb);
         }
 
-        if (arrPromisesDimensions.length) {
-            /*save new dimensions in db*/
-            const savedDimensions: Dimention[] = await Promise.all(arrPromisesDimensions);
-            /*adding relation - in Model arr all dimensions*/
-            currentModel.allModelDimensions = savedDimensions;
+        if (arrDimensionFromDb.length) {
+            currentModel.allModelDimensions = arrDimensionFromDb;
             const tempM = await this.modelsRepository.save(currentModel);
-            console.log('tempM-', tempM);
-            this.logger.log(`**Was saved ${arrPromisesDimensions.length} new additional dimensions`);
+            this.logger.log(`Saved ${tempM.allModelDimensions.length} new additional dimensions for model ${currentModel.model}`);
         }
 
         //create table sneakers
@@ -149,32 +166,36 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             }
 
             /*add present dimensions for this model*/
-            const googleAvailableDimensions: Dimention[] = [];
-            for (let j = whereStartDimentionsGoogle + 1; j < values.length; j++)
-                if (values[j][numModel] === '+') {
-                    const dimensionFromInDb: Dimention | null = await this.dimensionRepository.findOne({
-                        where: {size: +values[j][0]}
-                    });
-                    googleAvailableDimensions.push(dimensionFromInDb);
-                }
-            /*add additional check if dimension present in snaker */
+            const googleAvailableDimensions: { size: number }[] = [];
+            for (let dimens = whereStartDimentionsGoogle + 1; dimens < values.length; dimens++)
+                if (values[dimens][numModel] === '+')
+                    googleAvailableDimensions.push({size: +values[dimens][0]});
+
+            console.log('googleAvailableDimensions-', googleAvailableDimensions);
+            /*add additional check if dimension present in sneaker if no it will be changes */
             if (!isNewSneaker) {
                 const oldDimensions: Dimention[] = newSneakerOrExist.availableDimensions;
-                const newDimensions: Dimention[] = googleAvailableDimensions;
-                if (oldDimensions.length !== newDimensions.length) isChangePrice = true;
-                else {
+                const newDimensions: { size: number }[] = googleAvailableDimensions;
+                if (oldDimensions.length !== newDimensions.length)
+                    isChangePrice = true;
+                else if (oldDimensions.length !== 0 && newDimensions.length !== 0) {
                     const isDimensionExist: boolean = newDimensions.some((newDimension: Dimention) => {
-                        return oldDimensions.some((oldDimension: Dimention): boolean => {
-                            if (oldDimension.id === newDimension.id) return true;
-                        });
+                        return oldDimensions.some((oldDimension: Dimention): boolean =>
+                            oldDimension.size === newDimension.size
+                        );
                     });
-                    if (!isDimensionExist) isChangePrice = true;
+                    isChangePrice = !isDimensionExist;
                 }
             }
 
             //if was same change parameters in old sneakers Or created New Sneaker -  add to list for save
             if (isChangePrice || isNewSneaker) {
-                newSneakerOrExist.availableDimensions = googleAvailableDimensions;
+                const dimensionExistInDb: Dimention[] = await this.dimensionRepository.find({
+                    where: googleAvailableDimensions.map((oneDimens: { size: number }): { size: number } => {
+                        return {size: oneDimens.size}
+                    })
+                });
+                newSneakerOrExist.availableDimensions = dimensionExistInDb;
                 sneakersList.push(this.sneakersRepository.save(newSneakerOrExist));
             }
         }
