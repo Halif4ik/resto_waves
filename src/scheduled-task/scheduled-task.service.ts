@@ -9,7 +9,7 @@ import {ConfigService} from "@nestjs/config";
 import {GeneralResponse} from "../gen-responce/interface/generalResponse.interface";
 import {Dimention} from "./entities/dimention.entity";
 import {Model} from "./entities/model.entity";
-import {IRespLoadData} from "../gen-responce/interface/customResponces";
+import {IRespLoadData, TModelDimension} from "../gen-responce/interface/customResponces";
 
 @Injectable()
 export class ScheduledTaskService implements OnApplicationBootstrap {
@@ -41,7 +41,6 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             this.configService.get<string>('GOOGLE_SHEET_RANGE') + "?key=" +
             this.configService.get<string>('GOOGLE_API_KEY')
         ];
-
         let axiosData: any;
         try {
             const axiosResponses: AxiosResponse<any, any>[] = await Promise.all(
@@ -53,20 +52,14 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             console.error('Error loading data:', error[0]);
             throw new HttpException(`Responce from Googlesheets- ${error[0]} and status_code- ${+error[1]}`, HttpStatus.BAD_REQUEST);
         }
-
         if (!axiosData || axiosData.some(data => !data["values"] || data["values"].length === 0))
             throw new HttpException('Not found in one of the links any sneakers', HttpStatus.NOT_FOUND);
 
-        const createdModels: Model[] = await Promise.all(
-            urls.map(url => this.checkAndCreateModel(this.extractModelNameFromUrl(url)))
-        );
-
-        const axiosDimens = axiosData[0]["values"].slice(4);
-        /*create for new dimension schema*/
-        await Promise.all(
-            axiosDimens.map(async (oneArr: string[]): Promise<Dimention[]> => {
-                const arrPromisesDimensions: Promise<Dimention>[] = [];
-
+        /*check and create  new dimension schema*/
+        const modelsDimensions: TModelDimension[] = [];
+        for (let i = 0; i < axiosData.length; i++) {
+            const axiosDimens = axiosData[i]["values"].slice(4);
+            const dimensions: Dimention[] = await Promise.all(axiosDimens.map(async (oneArr: string[]): Promise<Dimention> => {
                 const newDimention: Dimention = this.dimensionRepository.create({
                     size: +oneArr[0],
                 });
@@ -74,23 +67,27 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
                     where: {size: newDimention.size}
                 });
                 if (!dimensionExistInDb) {
-                    arrPromisesDimensions.push(this.dimensionRepository.save(newDimention));
                     this.logger.log(`New additional dimension ${newDimention.size} CREATED`);
+                    return this.dimensionRepository.save(newDimention);
                 }
-                /*save new dimensions in db*/
-                if (arrPromisesDimensions.length) {
-                    const savedDimensions: Dimention[] = await Promise.all(arrPromisesDimensions);
-                    this.logger.log(`*Saved ${arrPromisesDimensions.length} new additional dimensions`);
-                    return savedDimensions;
-                }
+                return dimensionExistInDb;
+            }));
+            modelsDimensions.push({
+                model: axiosData[i]["range"].slice(1, -8),
+                dimensions: dimensions,
+            });
+        }
 
-            })
+        /*check and create  new model schema*/
+        const createdModels: Model[] = await Promise.all(
+            urls.map((url: string) => this.findOrCreateModel(
+                this.extractModelNameFromUrl(url), modelsDimensions))
         );
 
+        /*check and create  new sneakers schema*/
         const snakersForResponse: Sneakers[][] = await Promise.all(
-            axiosData.map((data, index) => this.createSnakers(data["values"], createdModels[index]))
+            axiosData.map((data, index) => this.createSneakers(data["values"], createdModels[index], modelsDimensions))
         );
-
         return {
             "status_code": HttpStatus.OK,
             "detail": {
@@ -100,52 +97,25 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
         };
     }
 
-    private extractModelNameFromUrl(url: string): string {
-        // Split the URL based on '/' and get the part containing the model name
-        const parts: string[] = url.split('/');
-        // Decode the URI-encoded model name
-        const decodedModelName: string = decodeURI(parts[7]);
-        // For example, if the model name is followed by !A, you can split it again and return the desired part
-        const modelNameParts: string[] = decodedModelName.split('!A');
-        return modelNameParts[0];
-    }
-
     /*todo check relation model sneakers*/
-    private async createSnakers(values: string[][], currentModel: Model): Promise<Sneakers[]> {
+    private async createSneakers(values: string[][], currentModel: Model, modelsDimensions: TModelDimension[]): Promise<Sneakers[]> {
         const sneakersList: Promise<Sneakers>[] = [];
         const modelNamesGoogle: string[] = values.find((oneArr: string[]): boolean => oneArr[0].trim().toLowerCase() === 'імя');
         const modelPricesGoogle: string[] = values.find((oneArr: string[]) => oneArr[0].trim().toLowerCase() === 'ціна');
         const modelArticlesGoogle: string[] = values.find(oneArr => oneArr[0].trim().toLowerCase() === 'код товару');
-        const whereStartDimentionsGoogle: number = values.findIndex(oneArr => oneArr[0].trim().toLowerCase() === 'розміри');
+        const whereStartDimentionsGoogle: number = values.findIndex(oneArr => oneArr[0].trim().toLowerCase() === 'розміри') + 1;
         if (modelNamesGoogle.length <= 1) throw new HttpException('Not found in this link any sneakers', HttpStatus.NOT_FOUND);
-
-
-        /*adding relation - in Model arr all dimensions*/
-        const arrDimensionFromDb: Dimention[] = [];
-        for (let j = whereStartDimentionsGoogle + 1; j < values.length; j++) {
-            const dimensionExistInDb: Dimention | null = await this.dimensionRepository.findOne({
-                where: {size: +values[j][0]}
-            });
-            if (!dimensionExistInDb)
-                arrDimensionFromDb.push(dimensionExistInDb);
-        }
-
-        if (arrDimensionFromDb.length) {
-            currentModel.allModelDimensions = arrDimensionFromDb;
-            const tempM = await this.modelsRepository.save(currentModel);
-            this.logger.log(`Saved ${tempM.allModelDimensions.length} new additional dimensions for model ${currentModel.model}`);
-        }
 
         //create table sneakers
         for (let numModel = 1; numModel < modelNamesGoogle.length; numModel++) {
             /*first of all try find sneaker exist in db*/
             let newSneakerOrExist: Sneakers | null = await this.sneakersRepository.findOne({
                 where: {name: modelNamesGoogle[numModel].replace(/\n/g, '')},
-                relations: ['availableDimensions']
+                relations: ['availableDimensions', 'model']
             });
             const isNewSneaker: boolean = !newSneakerOrExist;
-            let isChangePrice: boolean = false;
-            /*if not exist create new*/
+            let isAnyChangeinSneak: boolean = false;
+            /*if not exist create new and add relation model*/
             if (!newSneakerOrExist)
                 newSneakerOrExist = this.sneakersRepository.create({
                     name: modelNamesGoogle[numModel].replace(/\n/g, ''),
@@ -156,46 +126,47 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
                 });
             else { /*if exist update price and article*/
                 if (newSneakerOrExist.price !== +modelPricesGoogle[numModel]) {
-                    isChangePrice = true;
+                    isAnyChangeinSneak = true;
                     newSneakerOrExist.price = +modelPricesGoogle[numModel];
                 }
                 if (newSneakerOrExist.article !== +modelArticlesGoogle[numModel]) {
-                    isChangePrice = true;
+                    isAnyChangeinSneak = true;
                     newSneakerOrExist.article = +modelArticlesGoogle[numModel];
                 }
             }
 
-            /*add present dimensions for this model*/
+            /*add relation dimensions for this sneakers*/
             const googleAvailableDimensions: { size: number }[] = [];
-            for (let dimens = whereStartDimentionsGoogle + 1; dimens < values.length; dimens++)
+            for (let dimens = whereStartDimentionsGoogle; dimens < values.length; dimens++)
                 if (values[dimens][numModel] === '+')
                     googleAvailableDimensions.push({size: +values[dimens][0]});
 
-            console.log('googleAvailableDimensions-', googleAvailableDimensions);
             /*add additional check if dimension present in sneaker if no it will be changes */
             if (!isNewSneaker) {
                 const oldDimensions: Dimention[] = newSneakerOrExist.availableDimensions;
                 const newDimensions: { size: number }[] = googleAvailableDimensions;
                 if (oldDimensions.length !== newDimensions.length)
-                    isChangePrice = true;
+                    isAnyChangeinSneak = true;
                 else if (oldDimensions.length !== 0 && newDimensions.length !== 0) {
                     const isDimensionExist: boolean = newDimensions.some((newDimension: Dimention) => {
                         return oldDimensions.some((oldDimension: Dimention): boolean =>
                             oldDimension.size === newDimension.size
                         );
                     });
-                    isChangePrice = !isDimensionExist;
+                    isAnyChangeinSneak = !isDimensionExist;
                 }
             }
 
             //if was same change parameters in old sneakers Or created New Sneaker -  add to list for save
-            if (isChangePrice || isNewSneaker) {
-                const dimensionExistInDb: Dimention[] = await this.dimensionRepository.find({
-                    where: googleAvailableDimensions.map((oneDimens: { size: number }): { size: number } => {
-                        return {size: oneDimens.size}
-                    })
+            if (isAnyChangeinSneak || isNewSneaker) {
+                const dimensionCurentModel: Dimention[] = modelsDimensions.find(
+                    (oneModel: TModelDimension) => oneModel.model === currentModel.model).dimensions;
+                const dimensionForAdd: Dimention[] = dimensionCurentModel.filter((dimCurentModel: Dimention) => {
+                    return googleAvailableDimensions.some((oneDimensGoogle: { size: number }):boolean => {
+                        return dimCurentModel.size === oneDimensGoogle.size;
+                    } );
                 });
-                newSneakerOrExist.availableDimensions = dimensionExistInDb;
+                newSneakerOrExist.availableDimensions = dimensionForAdd;
                 sneakersList.push(this.sneakersRepository.save(newSneakerOrExist));
             }
         }
@@ -209,8 +180,7 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
         return [];
     }
 
-
-    private async checkAndCreateModel(modelName: string): Promise<Model> {
+    private async findOrCreateModel(modelName: string, modelsDimensions: TModelDimension[]): Promise<Model> {
         const newModel: Model = this.modelsRepository.create({
             model: modelName,
         });
@@ -218,10 +188,23 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
             where: {model: newModel.model}
         });
         if (!isModelExistInDb) {
+            /*adding relation - in Model arr all dimensions*/
+            newModel.allModelDimensions = modelsDimensions.find(
+                (oneModel: TModelDimension): boolean => oneModel.model === modelName).dimensions;
             this.logger.log(`New model ${modelName} created`);
             return this.modelsRepository.save(newModel);
         }
         return isModelExistInDb;
+    }
+
+    private extractModelNameFromUrl(url: string): string {
+        // Split the URL based on '/' and get the part containing the model name
+        const parts: string[] = url.split('/');
+        // Decode the URI-encoded model name
+        const decodedModelName: string = decodeURI(parts[7]);
+        // For example, if the model name is followed by !A, you can split it again and return the desired part
+        const modelNameParts: string[] = decodedModelName.split('!A');
+        return modelNameParts[0];
     }
 }
 

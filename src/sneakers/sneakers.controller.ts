@@ -1,7 +1,7 @@
 import {Controller, Get, Body, Patch, Param,  ValidationPipe, UsePipes, Query} from '@nestjs/common';
 import {SneakersService} from './sneakers.service';
 import {GeneralResponse} from "../gen-responce/interface/generalResponse.interface";
-import {IAllSneakers, IOneSneaker} from "../gen-responce/interface/customResponces";
+import {IAllModels, IAllSneakers, IOneSneaker} from "../gen-responce/interface/customResponces";
 import {GetSneakerDto} from "./dto/get-sneaker.dto";
 import {PaginationsSneakersDto} from "./dto/paginations-sneaker.dto";
 import {UpdateSneakerDto} from "./dto/update-sneaker.dto";
@@ -54,7 +54,7 @@ export class SneakersController {
     //Endpoint: Get /sneakers/models?model=Adidas%20Yeezy%20700
     @Get('/models')
     @UsePipes(new ValidationPipe({transform: true, whitelist: true}))
-    findSneakersByModel(@Query() getModelDto: GetModelDto): Promise<GeneralResponse<any>> {
+    findSneakersByModel(@Query() getModelDto: GetModelDto): Promise<GeneralResponse<IAllModels>> {
         return this.sneakersService.findSneakersByModel(getModelDto);
     }
 

@@ -6,7 +6,7 @@ import {
     ManyToOne,
     ManyToMany,
     JoinTable,
-    JoinColumn
+    JoinColumn, OneToMany
 } from 'typeorm';
 import {Sneakers} from "./sneakers.entity";
 import {Dimention} from "./dimention.entity";
@@ -22,10 +22,8 @@ export class Model {
     @DeleteDateColumn()
     deleteAt: Date;
 
-    @ManyToOne(() => Sneakers, sneakers => sneakers.model,
-        {onDelete: 'CASCADE', eager: true, cascade: true, /*nullable: false, orphanedRowAction: 'delete'*/})
-    @JoinColumn({name: 'sneakersName'})
-    sneakers: Sneakers;
+    @OneToMany(() => Sneakers, sneakers => sneakers.model)
+    sneakers: Sneakers[];
 
     @ManyToMany(() => Dimention)
     @JoinTable()

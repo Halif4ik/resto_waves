@@ -6,7 +6,7 @@ import {Dimention} from "../scheduled-task/entities/dimention.entity";
 import {Model} from "../scheduled-task/entities/model.entity";
 import {ConfigService} from "@nestjs/config";
 import {GeneralResponse} from "../gen-responce/interface/generalResponse.interface";
-import {IAllSneakers, IOneSneaker} from "../gen-responce/interface/customResponces";
+import {IAllModels, IAllSneakers, IOneSneaker} from "../gen-responce/interface/customResponces";
 import process from "process";
 import {PaginationsSneakersDto} from "./dto/paginations-sneaker.dto";
 import {UpdateSneakerDto} from "./dto/update-sneaker.dto";
@@ -90,16 +90,15 @@ export class SneakersService {
         };
     }
 
-    async findSneakersByModel(getModelDto: GetModelDto): Promise<GeneralResponse<any>> {
-        const sneakersByModel  = await this.modelsRepository.find({
+    async findSneakersByModel(getModelDto: GetModelDto): Promise<GeneralResponse<IAllModels>> {
+        const sneakersByModel: Model[] = await this.modelsRepository.find({
             relations: ["allModelDimensions", "sneakers"],
             where: {model: getModelDto.model}
         });
-        console.log('sneakersByModel-',sneakersByModel);
         return {
             "status_code": HttpStatus.OK,
             "detail": {
-                "sneakers": sneakersByModel ? sneakersByModel : [],
+                "sneakers": sneakersByModel,
             },
             "result": "updated"
         };
