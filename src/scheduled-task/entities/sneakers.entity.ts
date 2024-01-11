@@ -5,7 +5,6 @@ import {
     DeleteDateColumn,
     ManyToMany,
     JoinTable,
-    OneToMany,
     ManyToOne, JoinColumn
 } from 'typeorm';
 import {Dimention} from "./dimention.entity";

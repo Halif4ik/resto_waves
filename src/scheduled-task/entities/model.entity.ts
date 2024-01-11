@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import {Sneakers} from "./sneakers.entity";
 import {Dimention} from "./dimention.entity";
+import {Brand} from "./brand.entity";
 
 @Entity()
 export class Model {
@@ -28,4 +29,9 @@ export class Model {
     @ManyToMany(() => Dimention)
     @JoinTable()
     allModelDimensions: Dimention[];
+
+    @ManyToOne(() => Brand, brand => brand.model,
+        {onDelete: 'CASCADE', cascade: true, orphanedRowAction: 'soft-delete'})
+    @JoinColumn()
+    brand: Brand;
 }

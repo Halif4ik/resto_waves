@@ -6,12 +6,14 @@ import {Dimention} from "../scheduled-task/entities/dimention.entity";
 import {Model} from "../scheduled-task/entities/model.entity";
 import {ConfigService} from "@nestjs/config";
 import {GeneralResponse} from "../gen-responce/interface/generalResponse.interface";
-import {IAllModels, IAllSneakers, IOneSneaker} from "../gen-responce/interface/customResponces";
-import process from "process";
+import {IAllModels, IAllSneakers, IBrand, IOneSneaker} from "../gen-responce/interface/customResponces";
 import {PaginationsSneakersDto} from "./dto/paginations-sneaker.dto";
 import {UpdateSneakerDto} from "./dto/update-sneaker.dto";
 import {GetDimensionDto} from "./dto/dimension.dto";
 import {GetModelDto} from "./dto/get-model.dto";
+import {SetBrandDto} from "./dto/set-brand.dto";
+import {Brand} from "../scheduled-task/entities/brand.entity";
+import {GetBrandsDto} from "./dto/get-brands.dto";
 
 @Injectable()
 export class SneakersService {
@@ -20,6 +22,7 @@ export class SneakersService {
     constructor(@InjectRepository(Sneakers) private readonly sneakersRepository: Repository<Sneakers>,
                 @InjectRepository(Dimention) private readonly dimensionRepository: Repository<Dimention>,
                 @InjectRepository(Model) private readonly modelsRepository: Repository<Model>,
+                @InjectRepository(Brand) private readonly brandRepository: Repository<Brand>,
                 private readonly configService: ConfigService,) {
     }
 
@@ -67,6 +70,7 @@ export class SneakersService {
 
         targetSneakers.name = updateSneakerDto.nameSneakers;
         await this.sneakersRepository.save(targetSneakers);
+        this.logger.log(`Sneaker with id ${updateSneakerDto.id} was updated with name ${updateSneakerDto.nameSneakers}`);
         return {
             "status_code": HttpStatus.OK,
             "detail": {
@@ -77,14 +81,14 @@ export class SneakersService {
     }
 
     async findSneakers(getDimensionDto: GetDimensionDto): Promise<GeneralResponse<IAllSneakers>> {
-        const sneakersInDimension: Sneakers[] | null = await this.sneakersRepository.find({
+        const sneakersInDimension: Sneakers[] = await this.sneakersRepository.find({
             relations: ["availableDimensions"],
             where: {availableDimensions: {size: getDimensionDto.dimension}}
         });
         return {
             "status_code": HttpStatus.OK,
             "detail": {
-                "sneakers": sneakersInDimension ? sneakersInDimension : [],
+                "sneakers": sneakersInDimension,
             },
             "result": "updated"
         };
@@ -104,4 +108,48 @@ export class SneakersService {
         };
     }
 
+    async addBrandToModel(setBrandDto: SetBrandDto): Promise<GeneralResponse<IBrand>> {
+        const idForSearch: { id: number }[] = setBrandDto.modelIds.map((id) => ({id: id.modelId}));
+        const targetModels: Model[] = await this.modelsRepository.find({
+            relations: ["brand"],
+            where: idForSearch
+        });
+        if (!targetModels.length) throw new HttpException("Model not found", HttpStatus.BAD_REQUEST);
+
+        let existBrand: Brand | null = await this.brandRepository.findOne({
+            where: {brandName: setBrandDto.brandName}
+        });
+
+        if (!existBrand) {
+            existBrand = this.brandRepository.create({brandName: setBrandDto.brandName});
+        }
+        existBrand.model = targetModels;
+        const result: Brand = await this.brandRepository.save(existBrand);
+        this.logger.log(`Brand with name ${setBrandDto.brandName} was added to models with ids ${setBrandDto.modelIds}`);
+        return {
+            "status_code": HttpStatus.OK,
+            "detail": {
+                "brand": result,
+            },
+            "result": "updated"
+        };
+    }
+
+    async getBrandsWithModels(getBrandDto: GetBrandsDto): Promise<GeneralResponse<IBrand>> {
+        const idForSearch: { id: number }[] = getBrandDto.ids.map((id) => ({id: id}));
+        const brands: Brand[] = await this.brandRepository.find({
+            relations: ["model", "model.sneakers"],
+            where: idForSearch
+        });
+        if (!brands.length) throw new HttpException(`Any brand with this ids ${getBrandDto.ids} not found`, HttpStatus.BAD_REQUEST);
+
+        return {
+            "status_code": HttpStatus.OK,
+            "detail": {
+                "brand": brands,
+            },
+            "result": "updated"
+        };
+
+    }
 }

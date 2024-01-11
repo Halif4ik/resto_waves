@@ -59,19 +59,20 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
         const modelsDimensions: TModelDimension[] = [];
         for (let i = 0; i < axiosData.length; i++) {
             const axiosDimens = axiosData[i]["values"].slice(4);
-            const dimensions: Dimention[] = await Promise.all(axiosDimens.map(async (oneArr: string[]): Promise<Dimention> => {
-                const newDimention: Dimention = this.dimensionRepository.create({
-                    size: +oneArr[0],
-                });
-                const dimensionExistInDb: Dimention | null = await this.dimensionRepository.findOne({
-                    where: {size: newDimention.size}
-                });
-                if (!dimensionExistInDb) {
-                    this.logger.log(`New additional dimension ${newDimention.size} CREATED`);
-                    return this.dimensionRepository.save(newDimention);
-                }
-                return dimensionExistInDb;
-            }));
+            const dimensions: Dimention[] = await Promise.all(
+                axiosDimens.map(async (oneArr: string[]): Promise<Dimention> => {
+                    const newDimention: Dimention = this.dimensionRepository.create({
+                        size: +oneArr[0],
+                    });
+                    const dimensionExistInDb: Dimention | null = await this.dimensionRepository.findOne({
+                        where: {size: newDimention.size}
+                    });
+                    if (!dimensionExistInDb) {
+                        this.logger.log(`New additional dimension ${newDimention.size} CREATED`);
+                        return this.dimensionRepository.save(newDimention);
+                    }
+                    return dimensionExistInDb;
+                }));
             modelsDimensions.push({
                 model: axiosData[i]["range"].slice(1, -8),
                 dimensions: dimensions,
@@ -162,9 +163,9 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
                 const dimensionCurentModel: Dimention[] = modelsDimensions.find(
                     (oneModel: TModelDimension) => oneModel.model === currentModel.model).dimensions;
                 const dimensionForAdd: Dimention[] = dimensionCurentModel.filter((dimCurentModel: Dimention) => {
-                    return googleAvailableDimensions.some((oneDimensGoogle: { size: number }):boolean => {
+                    return googleAvailableDimensions.some((oneDimensGoogle: { size: number }): boolean => {
                         return dimCurentModel.size === oneDimensGoogle.size;
-                    } );
+                    });
                 });
                 newSneakerOrExist.availableDimensions = dimensionForAdd;
                 sneakersList.push(this.sneakersRepository.save(newSneakerOrExist));
