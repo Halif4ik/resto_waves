@@ -98,7 +98,6 @@ export class ScheduledTaskService implements OnApplicationBootstrap {
         };
     }
 
-    /*todo check relation model sneakers*/
     private async createSneakers(values: string[][], currentModel: Model, modelsDimensions: TModelDimension[]): Promise<Sneakers[]> {
         const sneakersList: Promise<Sneakers>[] = [];
         const modelNamesGoogle: string[] = values.find((oneArr: string[]): boolean => oneArr[0].trim().toLowerCase() === 'імя');
