@@ -17,5 +17,4 @@ export class PaginationsSneakersDto {
     @IsBoolean({message: 'Revert should be boolean'})
     @IsOptional()
     revert: boolean;
-
 }

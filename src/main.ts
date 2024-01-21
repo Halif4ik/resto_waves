@@ -14,6 +14,7 @@ import {AppModule} from './app.module';
             'http://91.214.247.147',
             'http://127.0.0.1:3010',
             'http://localhost:3010',
+
         ],
         methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
         credentials: true, // Enable cookies and authentication headers

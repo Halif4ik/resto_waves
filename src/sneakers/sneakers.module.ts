@@ -11,7 +11,7 @@ import {Brand} from "../scheduled-task/entities/brand.entity";
     controllers: [SneakersController],
     providers: [SneakersService],
     imports: [
-        TypeOrmModule.forFeature([Sneakers,Dimention,Model,Brand]),]
+        TypeOrmModule.forFeature([Sneakers, Dimention, Model, Brand]),]
 })
 export class SneakersModule {
 }
