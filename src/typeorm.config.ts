@@ -1,6 +1,7 @@
 import {DataSource} from "typeorm"
 import {config} from 'dotenv'
 import {ConfigService} from "@nestjs/config";
+
 config()
 const configService = new ConfigService();
 
@@ -17,6 +18,7 @@ const AppDataSource = new DataSource({
     migrations: ["src/migrations/*.ts"],
     logging: true,
     logger: "advanced-console",
+    ssl: { rejectUnauthorized: false },
 })
 
 AppDataSource.initialize()

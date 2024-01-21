@@ -22,6 +22,7 @@ import { SneakersModule } from './sneakers/sneakers.module';
             database: process.env.POSTGRES_DATABASE,
             synchronize: false,// true only for course with out migration
             autoLoadEntities: true,
+            ssl: { rejectUnauthorized: false },
         }),
         GenResponceModule,
         ScheduledTaskModule,
